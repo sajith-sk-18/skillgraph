@@ -63,6 +63,8 @@ and walking it.
   projects they have actually shipped together
 - **Skill gap analysis** — per requirement: who on the team meets the bar, and
   who outside it could close the shortfall
+- **Assign the team** — commit a staffing decision back to the graph, writing
+  real delivery history and updating the derived collaboration edge with it
 
 **Directory and records**
 
@@ -71,7 +73,8 @@ and walking it.
   certifications, derived domain experience
 - Project directory and detail, with required skills, technologies and team
 - Skill catalogue with holders, projects, average proficiency and co-occurrence
-- Project creation, writing new nodes and relationships to CognoDB
+- Project creation, including **adding a client or a domain that does not exist
+  yet**, writing new nodes and relationships to CognoDB
 
 **Graph and analytics**
 
@@ -189,9 +192,54 @@ zero references to `neo4j-driver`, the bolt URI, or any credential.
 | Layer | Responsibility | Why it exists |
 |---|---|---|
 | Route handler | Validate input, map errors to status codes | The only place that knows about HTTP |
+
 | Service | Business logic, scoring, assembling a profile | Testable without a database |
 | Repository | Run Cypher, convert driver types to plain objects | `Integer` and `Node` cannot cross into a Client Component |
 | Queries | Cypher only, no logic | Long query strings never end up inside a React component |
+
+### API surface
+
+```
+GET    /api/health                        liveness + database reachability
+
+GET    /api/dashboard/stats               headline counts and dashboard analytics
+GET    /api/analytics                     the full analytics set
+GET    /api/filters                       every filter dropdown, sourced from the graph
+
+GET    /api/employees                     directory, filtered and paged in Cypher
+GET    /api/employees/[id]                full profile
+GET    /api/employees/[id]/graph          that person's network
+
+GET    /api/projects                      project directory
+POST   /api/projects                      create a project (+ MERGE a new domain)
+GET    /api/projects/[id]                 project detail
+GET    /api/projects/[id]/skill-gap       coverage per requirement + who closes it
+POST   /api/projects/[id]/team            assign people, recompute WORKED_WITH
+DELETE /api/projects/[id]/team            clear the team, revert WORKED_WITH
+
+GET    /api/clients                       clients plus industry/country facets
+POST   /api/clients                       create a client
+
+GET    /api/skills                        skill catalogue
+GET    /api/skills/[id]                   skill detail, holders and co-occurrence
+
+POST   /api/staffing/match                rank candidates for a project
+POST   /api/staffing/recommend-team       greedy set-cover team
+GET    /api/staffing/connected            the relationally-awkward query
+
+GET    /api/graph/search                  global search across five labels
+GET    /api/graph/node/[id]               neighbourhood + node detail
+GET    /api/graph/starting-points         explorer entity picker
+```
+
+Staffing uses `POST` because a request carries a nested requirement list —
+encoding an array of `{skillId, proficiency, years}` into a query string would
+be lossy — and because it is a computation over current graph state rather than
+a cacheable resource.
+
+Status codes: `400` on validation failure with per-field detail, `404` for an
+unknown id, `503` when CognoDB is unreachable or unconfigured, `500` otherwise.
+No driver message, bolt URI or stack trace ever reaches the client.
 
 ---
 
@@ -322,6 +370,17 @@ of rows to describe a handful of facts.
 | Degree centrality | `analytics.queries.ts` | "Most connected people" |
 | Neighbourhood expansion | `graph.queries.ts` | Variable-length, capped traversal |
 
+### Writes
+
+| Query | File | What it does |
+|---|---|---|
+| `CREATE_PROJECT` | `project.queries.ts` | Project node plus FOR_CLIENT, IN_DOMAIN and REQUIRED_SKILL, MERGEing the domain |
+| `CREATE_CLIENT` | `project.queries.ts` | A new Client node |
+| `ASSIGN_TEAM` | `project.queries.ts` | WORKED_ON with the role held, plus HAS_TEAM_MEMBER |
+| `CLEAR_TEAM` | `project.queries.ts` | Removes everyone, making assignment reversible |
+| `UPSERT_COLLABORATION` | `project.queries.ts` | Rebuilds the derived WORKED_WITH edge after a team changes |
+| `DELETE_COLLABORATION` | `project.queries.ts` | Drops collaboration with no shared project behind it |
+
 ---
 
 ## 7. CognoDB's openCypher is not Neo4j's Cypher
@@ -416,6 +475,54 @@ Greedy set cover is not optimal — exhaustive search would be, and choosing 5
 from 69 is 11 million combinations on a 0.5 vCPU instance. Greedy lands within a
 few percent instantly, and the coverage figure shown to the user is *measured*
 afterwards, not assumed.
+
+### Committing the decision: assigning a team
+
+A recommendation nobody can act on is a report, not a tool. The recommended
+team arrives pre-ticked — the recommendation *is* the proposal — and anyone can
+be removed before it is committed.
+
+Assigning writes:
+
+```cypher
+(Employee)-[:WORKED_ON { role, startDate, endDate, responsibility }]->(Project)
+(Project)-[:HAS_TEAM_MEMBER]->(Employee)
+```
+
+The role is read from the person's own `HAS_ROLE` rather than invented, so an
+assigned engineer appears as *Senior Full Stack Developer* exactly as a seeded
+one does.
+
+**The derived edge is then recomputed.** `WORKED_WITH` exists only because two
+people share projects. Writing new `WORKED_ON` edges without updating it would
+leave the graph internally inconsistent — the staffing engine would go on
+scoring collaboration from stale history, and profiles would list co-workers
+that no longer match the project record. After an assignment, every pair among
+the team is rebuilt from actual shared-project counts.
+
+Pairing happens in TypeScript rather than Cypher, because pairing needs a
+pattern with **both ends already bound** — precisely the shape CognoDB gets
+wrong (landmine #1 in section 7). Counting over a flat membership list is
+provably correct and costs one query.
+
+**Assignment is reversible.** *Clear team* removes everyone and reverts
+collaboration to what the remaining history supports. Without it, one click
+would permanently destroy the deliberately unstaffed demo project — the
+scenario the entire application exists to demonstrate.
+
+### Creating clients and domains
+
+Both can be created from the project form, and they behave differently on
+purpose. A `Domain` is only a name, so it is `MERGE`d as part of creating the
+project — typing a new one is enough. A `Client` carries an industry and a
+country, so it needs its own record, and its own request, before the project
+has an id to point its `FOR_CLIENT` edge at.
+
+Adding this surfaced a latent bug worth recording. `CREATE_PROJECT` originally
+used `MATCH (d:Domain {name: $domain})`. A domain that did not exist yet matched
+nothing — and because that sat in the middle of the statement, **the entire
+project creation silently returned no rows**. It is now a `MERGE` with
+`ON CREATE SET d.id`.
 
 ---
 
@@ -578,7 +685,7 @@ Show a `HAS_SKILL` relationship: proficiency, years and recency live on the
 proficiency. Then show `WORKED_WITH` — derived from real project overlap, not
 authored — which turns a self-join over the assignment table into one hop.
 
-### Demo (4 minutes)
+### Demo (5 minutes)
 
 1. **Dashboard** — 186 nodes, 1,499 relationships. Every figure is a traversal
    at request time; nothing is precomputed.
@@ -599,8 +706,14 @@ authored — which turns a self-join over the assignment table into one hop.
    higher-scoring people, *because she is the only one who closes the Python
    gap*. That is set cover, not a leaderboard. 100% skill coverage, 4 of 5 with
    banking history, and Dana ↔ Arun have shipped 3 projects together.
-9. **Skill gap** on a staffed project — coverage per requirement plus who
-   outside the team could close each gap.
+9. **Assign the team.** The recommendation is already ticked; untick anyone and
+   press assign. This writes `WORKED_ON` and `HAS_TEAM_MEMBER` — and recomputes
+   `WORKED_WITH`, so collaboration never drifts out of step with delivery
+   history. Open the project: it now has a team, and the skill gap that read
+   *every requirement uncovered* now reads real coverage.
+   **Then press *Clear team*** to put the demo back for the next run.
+10. **Skill gap** on a staffed project — coverage per requirement plus who
+    outside the team could close each gap.
 
 ### The engineering story (2 minutes)
 
@@ -641,7 +754,7 @@ skillgraph/
 ├── app/
 │   ├── dashboard/            employees/  skills/  projects/
 │   ├── project-staffing/     graph-explorer/  analytics/
-│   ├── api/                  18 route handlers
+│   ├── api/                  20 route handlers
 │   ├── layout.tsx  error.tsx  not-found.tsx  globals.css
 ├── components/
 │   ├── ui/                   card, badge, button, progress, skeleton, states, field, avatar
