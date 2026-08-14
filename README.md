@@ -650,14 +650,52 @@ seeded before the first request, and check `/api/health`:
 
 ## 12. Screenshots
 
-_Add screenshots to `public/screenshots/` and reference them here._
+Captured from the [live deployment](https://skillgraph-seven.vercel.app).
 
-- Dashboard
-- Employee profile
-- Graph explorer
-- Project staffing
-- Project details
-- Analytics
+### Find the Best Team — the headline feature
+
+The banking project has just been won and has no team. The engine walks
+`Project → Skill → Employee`, then out through delivery history and
+collaboration. Ritu Desai is placed second at 73%, ahead of four
+higher-scoring people, because she is the only one who closes the Python gap.
+
+![Project staffing](public/screenshots/project-staffing.png)
+
+### Dashboard
+
+Every figure is a traversal at request time — nothing is precomputed, and each
+card links to the page holding the detail behind it.
+
+![Dashboard](public/screenshots/dashboard.png)
+
+### Employee profile
+
+Proficiency and recency are properties of the `HAS_SKILL` relationship, not of
+the Skill node. Domain experience is derived by walking
+`Employee → Project → Domain` rather than being stored.
+
+![Employee profile](public/screenshots/employee-profile.png)
+
+### Graph explorer
+
+The property graph directly: any entity, 1–3 hops, filtered by node label.
+Every node and labelled edge comes from a live traversal.
+
+![Graph explorer](public/screenshots/graph-explorer.png)
+
+### Project details
+
+Required skills with the bar carried on the `REQUIRED_SKILL` relationship, the
+technologies used, and the assigned team.
+
+![Project details](public/screenshots/project-details.png)
+
+### Analytics
+
+Skill supply against project demand — where the orange bar leads, the
+organisation is short.
+
+![Analytics](public/screenshots/analytics.png)
 
 ---
 
