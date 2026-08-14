@@ -6,22 +6,42 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx scripts/seed.ts",
+    "clear": "tsx scripts/clear-db.ts",
+    "verify": "tsx scripts/verify-queries.ts",
+    "test": "vitest run"
   },
   "dependencies": {
-    "react": "^18",
-    "react-dom": "^18",
-    "next": "14.1.4"
+    "@hookform/resolvers": "3.9.1",
+    "@tanstack/react-query": "5.59.20",
+    "@xyflow/react": "12.3.5",
+    "class-variance-authority": "0.7.0",
+    "clsx": "2.1.1",
+    "lucide-react": "0.454.0",
+    "neo4j-driver": "5.28.1",
+    "next": "14.1.4",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-hook-form": "7.53.2",
+    "recharts": "2.13.3",
+    "server-only": "0.0.1",
+    "tailwind-merge": "2.5.4",
+    "zod": "3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5",
     "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
     "autoprefixer": "^10.0.1",
+    "dotenv": "16.4.5",
+    "eslint": "^8",
+    "eslint-config-next": "14.1.4",
     "postcss": "^8",
     "tailwindcss": "^3.3.0",
-    "eslint": "^8",
-    "eslint-config-next": "14.1.4"
+    "tsx": "4.19.2",
+    "typescript": "^5",
+    "vitest": "2.1.5"
   }
 }

@@ -2,32 +2,134 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+/**
+ * Design tokens.
+ *
+ * Every colour in the app resolves through one of these variables, so light
+ * and dark are one definition rather than two sets of hardcoded classes. The
+ * palette is deliberately restrained - indigo for action, slate for structure,
+ * and colour reserved for meaning (availability, coverage, match strength).
+ */
+@layer base {
+	:root {
+		--background: 210 40% 98%;
+		--surface: 0 0% 100%;
+		--surface-muted: 210 40% 96%;
+		--foreground: 222 47% 11%;
+		--muted-foreground: 215 16% 47%;
+		--border: 214 32% 91%;
+		--input: 214 32% 91%;
+		--ring: 239 84% 67%;
+
+		--primary: 243 75% 59%;
+		--primary-foreground: 0 0% 100%;
+		--primary-soft: 239 100% 97%;
+
+		--success: 142 71% 45%;
+		--success-soft: 138 76% 95%;
+		--warning: 38 92% 50%;
+		--warning-soft: 48 100% 95%;
+		--danger: 0 72% 51%;
+		--danger-soft: 0 86% 96%;
+		--info: 199 89% 48%;
+		--info-soft: 204 94% 94%;
+		--accent: 271 81% 56%;
+		--accent-soft: 270 100% 97%;
+
+		--radius: 0.75rem;
+	}
+
+	.dark {
+		--background: 222 47% 8%;
+		--surface: 222 40% 11%;
+		--surface-muted: 217 33% 15%;
+		--foreground: 210 40% 96%;
+		--muted-foreground: 215 20% 65%;
+		--border: 217 33% 20%;
+		--input: 217 33% 20%;
+		--ring: 239 84% 67%;
+
+		--primary: 239 84% 67%;
+		--primary-foreground: 222 47% 11%;
+		--primary-soft: 243 47% 20%;
+
+		--success: 142 69% 58%;
+		--success-soft: 143 55% 18%;
+		--warning: 38 92% 60%;
+		--warning-soft: 33 60% 18%;
+		--danger: 0 84% 65%;
+		--danger-soft: 0 50% 20%;
+		--info: 199 89% 60%;
+		--info-soft: 200 60% 18%;
+		--accent: 271 81% 68%;
+		--accent-soft: 272 45% 20%;
+	}
+
+	* {
+		@apply border-border;
+	}
+
+	body {
+		@apply bg-background text-foreground antialiased;
+		font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+	}
+
+	/* Numbers in tables and score columns must not jitter between rows. */
+	.tabular {
+		font-variant-numeric: tabular-nums;
+	}
+
+	:focus-visible {
+		@apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+	}
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+@layer components {
+	/* Page frame - one definition so every route lines up. */
+	.page-shell {
+		@apply mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8;
+	}
+
+	.card-surface {
+		@apply rounded-xl border border-border bg-surface shadow-sm;
+	}
+
+	/*
+	 * Wide content scrolls inside its own container. Without this a table on a
+	 * phone makes the whole page scroll sideways, which breaks the sidebar.
+	 */
+	.scroll-x {
+		@apply -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0;
+	}
+
+	.no-scrollbar::-webkit-scrollbar {
+		display: none;
+	}
+	.no-scrollbar {
+		-ms-overflow-style: none;
+		scrollbar-width: none;
+	}
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+/* Respect a reduced-motion preference - the graph explorer animates a lot. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* React Flow renders its own chrome; align it with the token palette. */
+.react-flow__attribution {
+	display: none;
+}
+.react-flow__controls-button {
+	@apply border-border bg-surface text-foreground;
+}
+.react-flow__controls-button:hover {
+	@apply bg-surface-muted;
 }

@@ -34,3 +34,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Environment - .env.example is deliberately the only one committed.
+.env
+.env.*
+!.env.example
