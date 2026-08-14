@@ -476,6 +476,23 @@ from 69 is 11 million combinations on a 0.5 vCPU instance. Greedy lands within a
 few percent instantly, and the coverage figure shown to the user is *measured*
 afterwards, not assumed.
 
+### Surviving a cold database
+
+The free tier can suspend when idle, and a take-home is reviewed at a time
+nobody can predict. Queries therefore run as MANAGED transactions -
+`session.executeRead` / `executeWrite` rather than `session.run`.
+
+The distinction is easy to miss and was a real bug here.
+`maxTransactionRetryTime` is set on the driver, but it only applies to managed
+transactions; `session.run` is an auto-commit query that gets exactly one
+attempt. The setting looked like retry was configured while nothing retried, so
+a database still waking up produced an instant 503.
+
+With managed transactions the driver reconnects and retries connectivity-class
+failures for up to 15 seconds. A cold instance costs the first visitor a slow
+page instead of a broken one. Cypher syntax errors and constraint violations
+are not retried - they fail immediately, as they should.
+
 ### Committing the decision: assigning a team
 
 A recommendation nobody can act on is a report, not a tool. The recommended

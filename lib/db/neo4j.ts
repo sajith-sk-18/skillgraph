@@ -125,26 +125,50 @@ function asDatabaseError(error: unknown): DatabaseError {
  */
 export const toInt = (value: number) => neo4j.int(Math.round(value));
 
-/** Runs a parameterised read query and hands back the raw driver records. */
+/**
+ * Runs a parameterised read query, RETRYING transient failures.
+ *
+ * `session.executeRead` runs the query as a managed transaction, which is what
+ * makes `maxTransactionRetryTime` above mean anything. The obvious
+ * `session.run()` is an auto-commit query: one attempt, and a
+ * `ServiceUnavailable` from a database that is still waking up becomes an
+ * immediate 503 for the user.
+ *
+ * That distinction matters on a free tier that can suspend when idle. With a
+ * managed transaction the driver reconnects and retries for up to 15 seconds,
+ * so a cold instance costs the first visitor a slow page rather than a broken
+ * one. Only connectivity-class errors are retried - a Cypher syntax error or a
+ * constraint violation fails immediately, as it should.
+ */
 export async function readRecords(
 	cypher: string,
 	params: Record<string, unknown> = {},
 ): Promise<Neo4jRecord[]> {
-	return withSession(async (session) => {
-		const result: QueryResult = await session.run(cypher, params);
+	const session = getDriver().session({ defaultAccessMode: neo4j.session.READ });
+	try {
+		const result: QueryResult = await session.executeRead((tx) => tx.run(cypher, params));
 		return result.records;
-	});
+	} catch (error) {
+		throw asDatabaseError(error);
+	} finally {
+		await session.close();
+	}
 }
 
-/** Runs a parameterised write query. */
+/** Runs a parameterised write query, with the same retry semantics. */
 export async function writeRecords(
 	cypher: string,
 	params: Record<string, unknown> = {},
 ): Promise<Neo4jRecord[]> {
-	return withWriteSession(async (session) => {
-		const result: QueryResult = await session.run(cypher, params);
+	const session = getDriver().session({ defaultAccessMode: neo4j.session.WRITE });
+	try {
+		const result: QueryResult = await session.executeWrite((tx) => tx.run(cypher, params));
 		return result.records;
-	});
+	} catch (error) {
+		throw asDatabaseError(error);
+	} finally {
+		await session.close();
+	}
 }
 
 export async function verifyConnectivity(): Promise<{ ok: boolean; message: string }> {
