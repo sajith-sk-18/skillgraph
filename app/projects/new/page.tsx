@@ -5,7 +5,7 @@ import { CreateProjectForm } from "@/components/projects/create-project-form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
 import { skillFiltersSchema } from "@/lib/validations/schemas";
-import { getFilterOptions } from "@/server/services/project.service";
+import { getClientFacets, getFilterOptions } from "@/server/services/project.service";
 import { listSkills } from "@/server/services/skill.service";
 
 export const metadata = { title: "New project" };
@@ -32,8 +32,9 @@ export default function NewProjectPage() {
 
 async function FormLoader() {
 	try {
-		const [options, skills] = await Promise.all([
+		const [options, facets, skills] = await Promise.all([
 			getFilterOptions(),
+			getClientFacets(),
 			listSkills(skillFiltersSchema.parse({ limit: "100", sort: "name" })),
 		]);
 
@@ -42,6 +43,8 @@ async function FormLoader() {
 				options={{
 					clients: options.clients,
 					domains: options.domains,
+					industries: facets.industries,
+					countries: facets.countries,
 					skills: skills.map((skill) => ({
 						id: skill.id,
 						name: skill.name,

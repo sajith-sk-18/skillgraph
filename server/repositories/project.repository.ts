@@ -163,13 +163,101 @@ export async function nextProjectId(): Promise<string> {
 	return `PRJ${String(numeric + 1).padStart(3, "0")}`;
 }
 
+/** Next free id for a label, keeping generated ids in the seed's format. */
+async function nextId(cypher: string, prefix: string, width = 3): Promise<string> {
+	const records = await readRecords(cypher, {});
+	const maxId = String(toPlain(records[0]?.get("maxId")) ?? `${prefix}${"0".repeat(width)}`);
+	const numeric = Number.parseInt(maxId.replace(/\D/g, ""), 10) || 0;
+	return `${prefix}${String(numeric + 1).padStart(width, "0")}`;
+}
+
+export const nextClientId = () => nextId(Q.NEXT_CLIENT_ID, "CLI");
+export const nextDomainId = () => nextId(Q.NEXT_DOMAIN_ID, "DOM");
+
+export async function createClient(
+	id: string,
+	input: { name: string; industry: string; country: string },
+) {
+	const records = await writeRecords(Q.CREATE_CLIENT, { id, ...input });
+	const node = records[0]?.get("client") as Neo4jNode | undefined;
+	return node ? asClient(node) : null;
+}
+
+export async function getClientFacets(): Promise<{ industries: string[]; countries: string[] }> {
+	const records = await readRecords(Q.CLIENT_FACETS, {});
+	const record = records[0];
+	return {
+		industries: compact((toPlain(record?.get("industries")) as string[] | null) ?? []).sort(),
+		countries: compact((toPlain(record?.get("countries")) as string[] | null) ?? []).sort(),
+	};
+}
+
+export async function listDomains(): Promise<string[]> {
+	const records = await readRecords(Q.LIST_DOMAINS, {});
+	return records.map((record) => String(toPlain(record.get("name")) ?? "")).filter(Boolean);
+}
+
+export async function getEmployeeRoleNames(
+	employeeIds: string[],
+): Promise<Map<string, { seniority: string; roleName: string }>> {
+	const records = await readRecords(Q.EMPLOYEE_ROLE_NAMES, { employeeIds });
+	const map = new Map<string, { seniority: string; roleName: string }>();
+	for (const record of records) {
+		map.set(String(toPlain(record.get("employeeId")) ?? ""), {
+			seniority: String(toPlain(record.get("seniority")) ?? ""),
+			roleName: String(toPlain(record.get("roleName")) ?? "Team Member"),
+		});
+	}
+	return map;
+}
+
+export async function assignTeam(
+	projectId: string,
+	rows: { employeeId: string; role: string; responsibility: string }[],
+): Promise<number> {
+	const records = await writeRecords(Q.ASSIGN_TEAM, { projectId, rows });
+	return number(records[0]?.get("assigned"));
+}
+
+export async function clearTeam(projectId: string): Promise<number> {
+	const records = await writeRecords(Q.CLEAR_TEAM, { projectId });
+	return number(records[0]?.get("removed"));
+}
+
+export async function getTeamProjectMembership(
+	employeeIds: string[],
+): Promise<{ employeeId: string; projectId: string }[]> {
+	if (employeeIds.length === 0) return [];
+	const records = await readRecords(Q.TEAM_PROJECT_MEMBERSHIP, { employeeIds });
+	return records.map((record) => ({
+		employeeId: String(toPlain(record.get("employeeId")) ?? ""),
+		projectId: String(toPlain(record.get("projectId")) ?? ""),
+	}));
+}
+
+export async function upsertCollaboration(
+	rows: { a: string; b: string; projectsTogether: number; lastProject: string }[],
+): Promise<void> {
+	if (rows.length === 0) return;
+	await writeRecords(Q.UPSERT_COLLABORATION, {
+		rows: rows.map((row) => ({ ...row, projectsTogether: toInt(row.projectsTogether) })),
+	});
+}
+
+export async function deleteCollaboration(rows: { a: string; b: string }[]): Promise<void> {
+	if (rows.length === 0) return;
+	await writeRecords(Q.DELETE_COLLABORATION, { rows });
+}
+
 export async function createProject(
 	id: string,
+	domainId: string,
 	input: CreateProjectInput,
 	status: string,
 ): Promise<Project | null> {
 	const records = await writeRecords(Q.CREATE_PROJECT, {
 		id,
+		domainId,
 		name: input.name,
 		description: input.description,
 		status,

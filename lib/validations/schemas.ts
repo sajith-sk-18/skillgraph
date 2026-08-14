@@ -110,6 +110,30 @@ export const staffingRequestSchema = z
 
 export type StaffingRequest = z.infer<typeof staffingRequestSchema>;
 
+export const createClientSchema = z.object({
+	name: z.string().trim().min(2, "Give the client a name").max(120),
+	industry: z.string().trim().min(2, "Pick an industry").max(60),
+	country: z.string().trim().min(2, "Pick a country").max(60),
+});
+
+export type CreateClientInput = z.infer<typeof createClientSchema>;
+
+/**
+ * Assigning a team writes real delivery history.
+ *
+ * Bounded at 30 because it creates WORKED_ON edges plus the derived
+ * WORKED_WITH pairs between every member - which grows quadratically, so an
+ * unbounded list would be a denial-of-service against a 0.5 vCPU instance.
+ */
+export const assignTeamSchema = z.object({
+	employeeIds: z
+		.array(idSchema)
+		.min(1, "Select at least one person to assign")
+		.max(30, "That is more people than a single project can take"),
+});
+
+export type AssignTeamInput = z.infer<typeof assignTeamSchema>;
+
 export const graphExplorerSchema = z.object({
 	nodeId: z.string().trim().min(2).max(60),
 	depth: z.coerce.number().int().min(1).max(3).default(1),

@@ -54,15 +54,17 @@ export default function DashboardPage() {
 async function StatsSection() {
 	try {
 		const stats = await getDashboardStats();
+		// Every card links to the page holding the detail behind it - the
+		// availability card carries the very filter that produced its number.
 		return (
 			<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-				<StatCard label="Employees" value={stats.totalEmployees} icon={Users} tone="primary" hint={`${stats.totalTeams} teams`} />
-				<StatCard label="Available now" value={stats.availableEmployees} icon={UserCheck} tone="success" hint="Ready to be staffed" />
-				<StatCard label="Skills tracked" value={stats.totalSkills} icon={Braces} tone="accent" hint="Skills and technologies" />
-				<StatCard label="Projects" value={stats.totalProjects} icon={FolderKanban} tone="info" hint={`${stats.activeProjects} active · ${stats.plannedProjects} planned`} />
-				<StatCard label="Clients" value={stats.totalClients} icon={Building2} tone="warning" />
-				<StatCard label="Graph nodes" value={stats.totalNodes} icon={Network} tone="primary" />
-				<StatCard label="Relationships" value={stats.totalRelationships} icon={Network} tone="accent" hint="Typed edges in CognoDB" />
+				<StatCard label="Employees" value={stats.totalEmployees} icon={Users} tone="primary" hint={`${stats.totalTeams} teams`} href="/employees" />
+				<StatCard label="Available now" value={stats.availableEmployees} icon={UserCheck} tone="success" hint="Ready to be staffed" href="/employees?availability=Available" />
+				<StatCard label="Skills tracked" value={stats.totalSkills} icon={Braces} tone="accent" hint="Skills and technologies" href="/skills" />
+				<StatCard label="Projects" value={stats.totalProjects} icon={FolderKanban} tone="info" hint={`${stats.activeProjects} active · ${stats.plannedProjects} planned`} href="/projects" />
+				<StatCard label="Clients" value={stats.totalClients} icon={Building2} tone="warning" hint="Browse in the graph" href="/graph-explorer" />
+				<StatCard label="Graph nodes" value={stats.totalNodes} icon={Network} tone="primary" hint="Across 8 labels" href="/graph-explorer" />
+				<StatCard label="Relationships" value={stats.totalRelationships} icon={Network} tone="accent" hint="Typed edges in CognoDB" href="/analytics" />
 				<Link href="/project-staffing" className="block">
 					<Card className="h-full bg-primary p-4 text-primary-foreground transition-opacity hover:opacity-95">
 						<div className="flex h-full flex-col justify-between gap-2">

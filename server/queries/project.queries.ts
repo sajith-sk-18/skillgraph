@@ -175,7 +175,8 @@ WITH p
 MATCH (c:Client {id: $clientId})
 MERGE (p)-[:FOR_CLIENT]->(c)
 WITH p
-MATCH (d:Domain {name: $domain})
+MERGE (d:Domain {name: $domain})
+ON CREATE SET d.id = $domainId
 MERGE (p)-[:IN_DOMAIN]->(d)
 WITH p
 UNWIND $requiredSkills AS row
@@ -190,4 +191,110 @@ RETURN p AS project
 export const NEXT_PROJECT_ID = `
 MATCH (p:Project)
 RETURN count(p) AS total, max(p.id) AS maxId
+`.trim();
+
+export const NEXT_CLIENT_ID = `
+MATCH (c:Client)
+RETURN max(c.id) AS maxId
+`.trim();
+
+export const NEXT_DOMAIN_ID = `
+MATCH (d:Domain)
+RETURN max(d.id) AS maxId
+`.trim();
+
+export const CREATE_CLIENT = `
+MERGE (c:Client {id: $id})
+SET c.name = $name, c.industry = $industry, c.country = $country
+RETURN c AS client
+`.trim();
+
+/** Distinct industries and countries already in use, to seed the new-client form. */
+export const CLIENT_FACETS = `
+MATCH (c:Client)
+RETURN collect(DISTINCT c.industry) AS industries, collect(DISTINCT c.country) AS countries
+`.trim();
+
+export const LIST_DOMAINS = `
+MATCH (d:Domain)
+RETURN d.name AS name
+ORDER BY name ASC
+`.trim();
+
+/**
+ * ASSIGNING A TEAM
+ *
+ * Writes real delivery history: a WORKED_ON edge carrying the role the person
+ * will hold, plus the reverse HAS_TEAM_MEMBER used by the project views.
+ *
+ * The role is read from the employee's own HAS_ROLE rather than being invented,
+ * so an assigned engineer appears as "Backend Developer" exactly as a seeded
+ * one does.
+ */
+export const ASSIGN_TEAM = `
+MATCH (p:Project {id: $projectId})
+UNWIND $rows AS row
+MATCH (e:Employee {id: row.employeeId})
+MERGE (e)-[w:WORKED_ON]->(p)
+SET w.role = row.role,
+	w.startDate = p.startDate,
+	w.endDate = p.endDate,
+	w.responsibility = row.responsibility
+MERGE (p)-[:HAS_TEAM_MEMBER]->(e)
+RETURN count(DISTINCT e) AS assigned
+`.trim();
+
+/** The role name a person already holds, used to label their assignment. */
+export const EMPLOYEE_ROLE_NAMES = `
+UNWIND $employeeIds AS employeeId
+MATCH (e:Employee {id: employeeId})
+OPTIONAL MATCH (e)-[:HAS_ROLE]->(r:Role)
+RETURN e.id AS employeeId, e.seniority AS seniority, collect(r.name)[0] AS roleName
+`.trim();
+
+/**
+ * Removes everyone from a project.
+ *
+ * Needed because assignment is otherwise irreversible, and the demo project is
+ * deliberately unstaffed - without this, one click would permanently destroy
+ * the scenario the whole application is built to show.
+ */
+export const CLEAR_TEAM = `
+MATCH (p:Project {id: $projectId})
+OPTIONAL MATCH (p)-[m:HAS_TEAM_MEMBER]->(:Employee)
+DELETE m
+WITH p
+OPTIONAL MATCH (:Employee)-[w:WORKED_ON]->(p)
+DELETE w
+RETURN count(w) AS removed
+`.trim();
+
+/**
+ * Every project each of these people has worked on.
+ *
+ * Feeds the WORKED_WITH recomputation. Deliberately returns raw rows rather
+ * than pairing people up in Cypher: pairing needs a pattern with BOTH ends
+ * already bound, which is the shape CognoDB gets wrong (landmine #1). Pairing
+ * in TypeScript is provably correct.
+ */
+export const TEAM_PROJECT_MEMBERSHIP = `
+UNWIND $employeeIds AS employeeId
+MATCH (e:Employee {id: employeeId})-[:WORKED_ON]->(p:Project)
+RETURN e.id AS employeeId, p.id AS projectId
+`.trim();
+
+/** Rewrites the derived collaboration edge after a team changes. */
+export const UPSERT_COLLABORATION = `
+UNWIND $rows AS row
+MATCH (a:Employee {id: row.a})
+MATCH (b:Employee {id: row.b})
+MERGE (a)-[w:WORKED_WITH]->(b)
+SET w.projectsTogether = row.projectsTogether, w.lastProject = row.lastProject
+`.trim();
+
+/** Drops collaboration edges that no longer have a shared project behind them. */
+export const DELETE_COLLABORATION = `
+UNWIND $rows AS row
+MATCH (a:Employee {id: row.a})-[w:WORKED_WITH]-(b:Employee {id: row.b})
+DELETE w
 `.trim();

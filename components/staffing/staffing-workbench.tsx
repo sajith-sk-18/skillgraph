@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Sparkles, Users } from "lucide-react";
 
+import { AssignTeamBar } from "@/components/staffing/assign-team-bar";
 import { CandidateCard } from "@/components/staffing/candidate-card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,8 @@ interface ProjectOption {
 	domain: string;
 	status: string;
 	teamSize: number;
+	/** People actually assigned, as opposed to teamSize which is the target. */
+	staffedCount: number;
 }
 
 interface MatchResponse {
@@ -59,12 +62,23 @@ export function StaffingWorkbench({
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [hasRun, setHasRun] = useState(false);
+	// Ids ticked for assignment. Held here rather than in the results components
+	// so a selection survives switching between candidate and team mode.
+	const [selectedIds, setSelectedIds] = useState<string[]>([]);
+	const [staffedCount, setStaffedCount] = useState(0);
 
 	const selected = projects.find((project) => project.id === projectId);
 
 	useEffect(() => {
-		if (selected) setTeamSize(selected.teamSize);
+		if (!selected) return;
+		setTeamSize(selected.teamSize);
+		setStaffedCount(selected.staffedCount);
 	}, [selected]);
+
+	const toggle = (id: string) =>
+		setSelectedIds((current) =>
+			current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+		);
 
 	const run = useCallback(
 		async (nextMode: Mode) => {
@@ -90,8 +104,15 @@ export function StaffingWorkbench({
 					return;
 				}
 
-				if (nextMode === "team") setTeam(payload as TeamRecommendation);
-				else setMatch(payload as MatchResponse);
+				if (nextMode === "team") {
+					const recommendation = payload as TeamRecommendation;
+					setTeam(recommendation);
+					// The recommendation IS the proposal, so it arrives ticked; the
+					// user removes people rather than re-picking them one by one.
+					setSelectedIds(recommendation.members.map((member) => member.employee.id));
+				} else {
+					setMatch(payload as MatchResponse);
+				}
 			} catch {
 				setError("The staffing engine could not be reached. The graph database may be unavailable.");
 			} finally {
@@ -125,6 +146,7 @@ export function StaffingWorkbench({
 									setHasRun(false);
 									setMatch(null);
 									setTeam(null);
+									setSelectedIds([]);
 								}}
 							>
 								{projects.map((project) => (
@@ -145,9 +167,9 @@ export function StaffingWorkbench({
 								value={teamSize}
 								onChange={(event) => setTeamSize(Number(event.target.value))}
 							>
-								{[3, 4, 5, 6, 7, 8, 9, 10].map((size) => (
+								{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((size) => (
 									<option key={size} value={size}>
-										{size} people
+										{size} {size === 1 ? "person" : "people"}
 									</option>
 								))}
 							</Select>
@@ -215,15 +237,65 @@ export function StaffingWorkbench({
 			) : null}
 
 			{!loading && !error && hasRun && mode === "candidates" && match ? (
-				<CandidateResults match={match} />
+				<CandidateResults match={match} selectedIds={selectedIds} onToggle={toggle} />
 			) : null}
 
-			{!loading && !error && hasRun && mode === "team" && team ? <TeamResults team={team} /> : null}
+			{!loading && !error && hasRun && mode === "team" && team ? <TeamResults team={team} selectedIds={selectedIds} onToggle={toggle} /> : null}
+
+			{selected ? (
+				<AssignTeamBar
+					projectId={selected.id}
+					projectName={selected.name}
+					selectedIds={selectedIds}
+					staffedCount={staffedCount}
+					onClear={() => setSelectedIds([])}
+					onAssigned={() => {
+						setSelectedIds([]);
+						// Re-run so coverage, gaps and collaboration reflect the write.
+						void run(mode);
+					}}
+				/>
+			) : null}
 		</div>
 	);
 }
 
-function CandidateResults({ match }: { match: MatchResponse }) {
+interface SelectionProps {
+	selectedIds: string[];
+	onToggle: (id: string) => void;
+}
+
+/** Tick control shared by both result views. */
+function SelectToggle({
+	id,
+	name,
+	selected,
+	onToggle,
+}: {
+	id: string;
+	name: string;
+	selected: boolean;
+	onToggle: (id: string) => void;
+}) {
+	return (
+		<label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+			<input
+				type="checkbox"
+				checked={selected}
+				onChange={() => onToggle(id)}
+				aria-label={`Select ${name} for this project`}
+				className="h-3.5 w-3.5 rounded border-border"
+			/>
+			{selected ? "Selected" : "Select"}
+		</label>
+	);
+}
+
+function CandidateResults({
+	match,
+	selectedIds,
+	onToggle,
+}: { match: MatchResponse } & SelectionProps) {
 	if (match.candidates.length === 0) {
 		return (
 			<EmptyState
@@ -252,14 +324,28 @@ function CandidateResults({ match }: { match: MatchResponse }) {
 
 			<div className="grid gap-3 lg:grid-cols-2">
 				{match.candidates.map((candidate, index) => (
-					<CandidateCard key={candidate.employee.id} candidate={candidate} rank={index + 1} />
+					<div key={candidate.employee.id} className="relative">
+						<div className="absolute right-3 top-3 z-10">
+							<SelectToggle
+								id={candidate.employee.id}
+								name={candidate.employee.name}
+								selected={selectedIds.includes(candidate.employee.id)}
+								onToggle={onToggle}
+							/>
+						</div>
+						<CandidateCard candidate={candidate} rank={index + 1} />
+					</div>
 				))}
 			</div>
 		</>
 	);
 }
 
-function TeamResults({ team }: { team: TeamRecommendation }) {
+function TeamResults({
+	team,
+	selectedIds,
+	onToggle,
+}: { team: TeamRecommendation } & SelectionProps) {
 	const strengthTone = { Strong: "success", Moderate: "info", None: "muted" } as const;
 
 	return (
@@ -297,38 +383,53 @@ function TeamResults({ team }: { team: TeamRecommendation }) {
 					<CardTitle>Recommended team</CardTitle>
 					<p className="text-[11px] text-muted-foreground">
 						Chosen to COVER the requirement, not simply the highest scores - each pick after the first
-						adds the most uncovered skill.
+						adds the most uncovered skill. Untick anyone you do not want before assigning.
 					</p>
 				</CardHeader>
 				<CardContent>
 					<ol className="space-y-2.5">
-						{team.members.map((member, index) => (
-							<li key={member.employee.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
-								<span aria-hidden className="tabular mt-1 w-4 text-xs font-semibold text-muted-foreground">
-									{index + 1}
-								</span>
-								<Avatar name={member.employee.name} size="sm" />
-								<div className="min-w-0 flex-1">
-									<Link href={`/employees/${member.employee.id}`} className="text-xs font-semibold hover:underline">
-										{member.employee.name}
-									</Link>
-									<p className="truncate text-[11px] text-muted-foreground">{member.employee.jobTitle}</p>
-									<div className="mt-1.5 flex flex-wrap gap-1">
-										<Badge tone="accent">{member.primarySkill}</Badge>
-										{member.coversSkills.length > 0 ? (
-											member.coversSkills.map((skill) => (
-												<Badge key={skill} tone="success">
-													covers {skill}
-												</Badge>
-											))
-										) : (
-											<Badge tone="muted">depth on covered skills</Badge>
-										)}
+						{team.members.map((member, index) => {
+							const selected = selectedIds.includes(member.employee.id);
+							return (
+								<li
+									key={member.employee.id}
+									className={`flex items-start gap-3 rounded-lg border p-3 transition-colors ${
+										selected ? "border-primary/40 bg-primary-soft/30" : "border-border"
+									}`}
+								>
+									<input
+										type="checkbox"
+										checked={selected}
+										onChange={() => onToggle(member.employee.id)}
+										aria-label={`Include ${member.employee.name} in the team to assign`}
+										className="mt-1.5 h-3.5 w-3.5 shrink-0 rounded border-border"
+									/>
+									<span aria-hidden className="tabular mt-1 w-4 text-xs font-semibold text-muted-foreground">
+										{index + 1}
+									</span>
+									<Avatar name={member.employee.name} size="sm" />
+									<div className="min-w-0 flex-1">
+										<Link href={`/employees/${member.employee.id}`} className="text-xs font-semibold hover:underline">
+											{member.employee.name}
+										</Link>
+										<p className="truncate text-[11px] text-muted-foreground">{member.employee.jobTitle}</p>
+										<div className="mt-1.5 flex flex-wrap gap-1">
+											<Badge tone="accent">{member.primarySkill}</Badge>
+											{member.coversSkills.length > 0 ? (
+												member.coversSkills.map((skill) => (
+													<Badge key={skill} tone="success">
+														covers {skill}
+													</Badge>
+												))
+											) : (
+												<Badge tone="muted">depth on covered skills</Badge>
+											)}
+										</div>
 									</div>
-								</div>
-								<span className="tabular shrink-0 text-sm font-semibold">{member.score}%</span>
-							</li>
-						))}
+									<span className="tabular shrink-0 text-sm font-semibold">{member.score}%</span>
+								</li>
+							);
+						})}
 					</ol>
 				</CardContent>
 			</Card>

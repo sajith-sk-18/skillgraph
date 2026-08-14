@@ -66,6 +66,8 @@ async function Workbench({ initialProjectId }: { initialProjectId?: string }) {
 					domain: project.domain,
 					status: project.status,
 					teamSize: project.teamSize,
+					// teamSize is the target; teamCount is who is actually on it.
+					staffedCount: project.teamCount,
 				}))}
 			/>
 		);

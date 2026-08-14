@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,13 @@ interface Options {
 	clients: { id: string; name: string }[];
 	domains: string[];
 	skills: { id: string; name: string; category: string }[];
+	/** Existing values, offered as suggestions when adding a client. */
+	industries: string[];
+	countries: string[];
 }
+
+/** Sentinel value for the "add a new one" entry in a select. */
+const ADD_NEW = "__add_new__";
 
 /**
  * Project creation.
@@ -29,10 +35,28 @@ export function CreateProjectForm({ options }: { options: Options }) {
 	const router = useRouter();
 	const [serverError, setServerError] = useState<string | null>(null);
 
+	/**
+	 * Clients and domains can be created here rather than only in the seed.
+	 *
+	 * They behave differently on purpose. A Domain is only a name, so it is
+	 * MERGEd as part of creating the project - typing a new one is enough. A
+	 * Client carries an industry and a country, so it needs its own record and
+	 * its own request before the project can point at it.
+	 */
+	const [clients, setClients] = useState(options.clients);
+	const [domains] = useState(options.domains);
+	const [addingClient, setAddingClient] = useState(false);
+	const [addingDomain, setAddingDomain] = useState(false);
+	const [newClient, setNewClient] = useState({ name: "", industry: "", country: "" });
+	const [newDomain, setNewDomain] = useState("");
+	const [clientBusy, setClientBusy] = useState(false);
+	const [clientError, setClientError] = useState<string | null>(null);
+
 	const {
 		register,
 		control,
 		handleSubmit,
+		setValue,
 		formState: { errors, isSubmitting },
 	} = useForm<CreateProjectInput>({
 		resolver: zodResolver(createProjectSchema),
@@ -102,24 +126,192 @@ export function CreateProjectForm({ options }: { options: Options }) {
 					</Field>
 
 					<Field label="Client" htmlFor="clientId" error={errors.clientId?.message}>
-						<Select id="clientId" {...register("clientId")} aria-invalid={Boolean(errors.clientId)}>
-							{options.clients.map((client) => (
+						<Select
+							id="clientId"
+							{...register("clientId")}
+							aria-invalid={Boolean(errors.clientId)}
+							onChange={(event) => {
+								if (event.target.value === ADD_NEW) {
+									setAddingClient(true);
+									// Never let the sentinel reach the form state - it is not an id.
+									setValue("clientId", clients[0]?.id ?? "");
+									return;
+								}
+								setValue("clientId", event.target.value, { shouldValidate: true });
+							}}
+						>
+							{clients.map((client) => (
 								<option key={client.id} value={client.id}>
 									{client.name}
 								</option>
 							))}
+							<option value={ADD_NEW}>+ Add a new client...</option>
 						</Select>
 					</Field>
 
 					<Field label="Domain" htmlFor="domain" error={errors.domain?.message}>
-						<Select id="domain" {...register("domain")} aria-invalid={Boolean(errors.domain)}>
-							{options.domains.map((domain) => (
-								<option key={domain} value={domain}>
-									{domain}
-								</option>
-							))}
-						</Select>
+						{addingDomain ? (
+							<div className="flex gap-1.5">
+								<Input
+									id="domain"
+									autoFocus
+									placeholder="e.g. Energy"
+									value={newDomain}
+									onChange={(event) => {
+										setNewDomain(event.target.value);
+										setValue("domain", event.target.value, { shouldValidate: true });
+									}}
+								/>
+								<Button
+									variant="ghost"
+									size="sm"
+									aria-label="Cancel adding a domain"
+									onClick={() => {
+										setAddingDomain(false);
+										setNewDomain("");
+										setValue("domain", domains[0] ?? "", { shouldValidate: true });
+									}}
+								>
+									<X className="h-3.5 w-3.5" aria-hidden />
+								</Button>
+							</div>
+						) : (
+							<Select
+								id="domain"
+								{...register("domain")}
+								aria-invalid={Boolean(errors.domain)}
+								onChange={(event) => {
+									if (event.target.value === ADD_NEW) {
+										setAddingDomain(true);
+										setValue("domain", "");
+										return;
+									}
+									setValue("domain", event.target.value, { shouldValidate: true });
+								}}
+							>
+								{domains.map((domain) => (
+									<option key={domain} value={domain}>
+										{domain}
+									</option>
+								))}
+								<option value={ADD_NEW}>+ Add a new domain...</option>
+							</Select>
+						)}
 					</Field>
+
+					{/*
+					 * A new client is written before the project, because the project
+					 * needs a real client id to point its FOR_CLIENT edge at.
+					 */}
+					{addingClient ? (
+						<div className="rounded-lg border border-primary/30 bg-primary-soft/30 p-3 sm:col-span-2">
+							<p className="mb-2 text-[11px] font-medium">New client</p>
+							<div className="grid gap-2 sm:grid-cols-3">
+								<div>
+									<label htmlFor="new-client-name" className="sr-only">
+										Client name
+									</label>
+									<Input
+										id="new-client-name"
+										autoFocus
+										placeholder="Client name"
+										value={newClient.name}
+										onChange={(event) => setNewClient({ ...newClient, name: event.target.value })}
+									/>
+								</div>
+								<div>
+									<label htmlFor="new-client-industry" className="sr-only">
+										Industry
+									</label>
+									<Input
+										id="new-client-industry"
+										list="client-industries"
+										placeholder="Industry"
+										value={newClient.industry}
+										onChange={(event) => setNewClient({ ...newClient, industry: event.target.value })}
+									/>
+									<datalist id="client-industries">
+										{options.industries.map((industry) => (
+											<option key={industry} value={industry} />
+										))}
+									</datalist>
+								</div>
+								<div>
+									<label htmlFor="new-client-country" className="sr-only">
+										Country
+									</label>
+									<Input
+										id="new-client-country"
+										list="client-countries"
+										placeholder="Country"
+										value={newClient.country}
+										onChange={(event) => setNewClient({ ...newClient, country: event.target.value })}
+									/>
+									<datalist id="client-countries">
+										{options.countries.map((country) => (
+											<option key={country} value={country} />
+										))}
+									</datalist>
+								</div>
+							</div>
+
+							{clientError ? (
+								<p role="alert" className="mt-2 text-[11px] text-danger">
+									{clientError}
+								</p>
+							) : null}
+
+							<div className="mt-2 flex gap-2">
+								<Button
+									size="sm"
+									disabled={clientBusy}
+									onClick={async () => {
+										setClientBusy(true);
+										setClientError(null);
+										try {
+											const response = await fetch("/api/clients", {
+												method: "POST",
+												headers: { "Content-Type": "application/json" },
+												body: JSON.stringify(newClient),
+											});
+											const payload = await response.json();
+
+											if (!response.ok || payload.error) {
+												setClientError(
+													payload.details?.[0]?.message ??
+														payload.error ??
+														"The client could not be created.",
+												);
+												return;
+											}
+
+											setClients((current) => [...current, payload.client]);
+											setValue("clientId", payload.client.id, { shouldValidate: true });
+											setAddingClient(false);
+											setNewClient({ name: "", industry: "", country: "" });
+										} catch {
+											setClientError("The graph database could not be reached.");
+										} finally {
+											setClientBusy(false);
+										}
+									}}
+								>
+									{clientBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+									Save client
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => {
+										setAddingClient(false);
+										setClientError(null);
+									}}
+								>
+									Cancel
+								</Button>
+							</div>
+						</div>
+					) : null}
 
 					<Field label="Start date" htmlFor="startDate" error={errors.startDate?.message}>
 						<Input id="startDate" type="date" {...register("startDate")} />
