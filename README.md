@@ -16,7 +16,7 @@ are the data — not something reconstructed at query time from foreign keys.
 | **Graph** | 186 nodes · 1,499 relationships · 8 node labels · 9 relationship types |
 | **Live demo** | **https://skillgraph-seven.vercel.app** |
 | **Repository** | https://github.com/sajith-sk-18/skillgraph |
-| **Screen recording** | `TODO: paste the recording link here` |
+| **Screen recording** | **[Walkthrough (3½ min)](https://www.loom.com/share/c9c83e37b39747b39aaac3d414f0c9be)** |
 
 > The fastest way to see the point of this application:
 > **[open the staffing engine on the unstaffed banking project](https://skillgraph-seven.vercel.app/project-staffing?project=PRJ001)**
